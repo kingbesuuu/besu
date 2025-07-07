@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Admin Panel</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f0f0f0; }
+    label { display: block; margin-top: 10px; }
+    input { padding: 6px; margin-top: 5px; width: 300px; }
+    button { margin-top: 10px; padding: 8px 16px; }
+    #balance-form { display: none; }
+    table { margin-top: 20px; border-collapse: collapse; }
+    th, td { padding: 8px 12px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <h2>🔐 Admin Login</h2>
+
+  <div id="login-form">
+    <label>Username:
+      <input type="text" id="admin-username" placeholder="admin" />
+    </label>
+    <label>Password:
+      <input type="password" id="admin-password" placeholder="password" />
+    </label>
+    <button onclick="adminLogin()">Login</button>
+    <p id="login-error" style="color: red;"></p>
+  </div>
+
+  <div id="balance-form">
+    <h3>💰 Update Player Balance</h3>
+    <label>Telegram Username:
+      <input type="text" id="username" placeholder="e.g. kingbesuuu" />
+    </label>
+    <label>New Balance:
+      <input type="number" id="amount" />
+    </label>
+    <button onclick="updateBalance()">Update Balance</button>
+    <button onclick="checkBalance()">Check Balance</button>
+    <p id="result" style="margin-top: 10px;"></p>
+
+    <hr />
+    <h3>📋 All Players</h3>
+    <button onclick="loadUsers()">🔄 Refresh User List</button>
+    <table>
+      <thead>
+        <tr><th>Username</th><th>Balance</th></tr>
+      </thead>
+      <tbody id="user-table-body">
+        <tr><td colspan="2">No data loaded yet.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+    const ADMIN_USERNAME = "admin";
+    const ADMIN_PASSWORD = "admin123";
+    const ADMIN_SECRET = "changeme"; // must match server.js
+
+    function adminLogin() {
+      const user = document.getElementById("admin-username").value.trim();
+      const pass = document.getElementById("admin-password").value;
+      const error = document.getElementById("login-error");
+
+      if (user === ADMIN_USERNAME && pass === ADMIN_PASSWORD) {
+        document.getElementById("login-form").style.display = "none";
+        document.getElementById("balance-form").style.display = "block";
+        loadUsers(); // auto-load user list
+      } else {
+        error.textContent = "❌ Invalid username or password.";
+      }
+    }
+
+    async function updateBalance() {
+      const username = document.getElementById("username").value.trim();
+      const amount = parseInt(document.getElementById("amount").value);
+      const result = document.getElementById("result");
+
+      if (!username || isNaN(amount)) {
+        result.textContent = '❌ Please fill in all fields.';
+        return;
+      }
+
+      const res = await fetch('/admin/update-balance', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + ADMIN_SECRET
+        },
+        body: JSON.stringify({ username, amount })
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        result.textContent = `✅ Updated @${username}'s balance to ${amount}`;
+        loadUsers(); // refresh table
+      } else {
+        result.textContent = `❌ Error: ${data.error || 'Unknown error'}`;
+      }
+    }
+
+    async function checkBalance() {
+      const username = document.getElementById("username").value.trim();
+      const result = document.getElementById("result");
+
+      if (!username) {
+        result.textContent = '❌ Please enter a username.';
+        return;
+      }
+
+      const res = await fetch('/admin/get-balance?username=' + encodeURIComponent(username), {
+        headers: {
+          'Authorization': 'Bearer ' + ADMIN_SECRET
+        }
+      });
+
+      const data = await res.json();
+      if (res.ok) {
+        result.textContent = `📊 @${username}'s current balance: ${data.balance}`;
+      } else {
+        result.textContent = `❌ Error: ${data.error || 'Unknown error'}`;
+      }
+    }
+
+    async function loadUsers() {
+      const tableBody = document.getElementById("user-table-body");
+      tableBody.innerHTML = '<tr><td colspan="2">Loading...</td></tr>';
+
+      try {
+        const res = await fetch('/admin/list-users', {
+          headers: {
+            'Authorization': 'Bearer ' + ADMIN_SECRET
+          }
+        });
+        const data = await res.json();
+
+        if (res.ok) {
+          const users = data.users || {};
+          if (Object.keys(users).length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="2">No users found.</td></tr>';
+          } else {
+            tableBody.innerHTML = '';
+            for (const [username, userData] of Object.entries(users)) {
+              const tr = document.createElement('tr');
+              tr.innerHTML = `<td>@${username}</td><td>${userData.balance ?? 0}</td>`;
+              tableBody.appendChild(tr);
+            }
+          }
+        } else {
+          tableBody.innerHTML = `<tr><td colspan="2">❌ ${data.error}</td></tr>`;
+        }
+      } catch (err) {
+        tableBody.innerHTML = `<tr><td colspan="2">❌ Network error</td></tr>`;
+      }
+    }
+  </script>
+</body>
+</html>
