@@ -6,42 +6,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Multiplayer Bingo</title>
   <style>
-    body { font-family: Arial, sans-serif; padding: 10px; background-color: #ccffff; background-image: url('https://coventryobserver.co.uk/wp-content/uploads/2024/08/bingo-7318132_1280-1-651x434.jpg'); }
-    .grid { display: grid; grid-template-columns: repeat(10, 24px); gap: 3px; margin-top: 10px; }
-    .grid button { width: 24px; height: 24px; font-size: 10px; cursor: pointer; }
-    .bingo-card table, .mini-table { border-collapse: collapse; margin-bottom: 10px; }
-    .bingo-card td, .mini-table td { background-color: white; color: blue; border: 1px solid #FFC0CB; font-size: 12px; font-weight: bold; text-align: center; vertical-align: middle; width: 28px; height: 28px; cursor: pointer; transition: background 0.3s; }
-    .bingo-card td:hover, .mini-table td:hover { background-color: #e0e0e0; }
-    .try-again-container button:hover { background: #218838; }
+    body { font-family: Arial, sans-serif; padding: 10px; background-color: #ccffff; }
+    .flex-main { display: flex; justify-content: flex-end; align-items: center; height: 80vh; }
+    .left-panel { flex: 1; }
+    .right-panel { flex: 1; display: flex; flex-direction: column; align-items: flex-end; }
+    .bingo-card-container { margin-right: 5vw; }
+    .bingo-card table { border-collapse: collapse; }
+    .bingo-card td { background-color: white; color: blue; border: 1px solid #FFC0CB; font-size: 12px; font-weight: bold; text-align: center; width: 28px; height: 28px; cursor: pointer; transition: background 0.3s; }
     .bingo-card .free { background-color: #ccc; color: yellow; cursor: default; }
-    #winner-card-display { margin-top: 15px; text-align: center; }
-    #winner-card-display .bingo-card { margin: 0 auto; }
-    .mini-table .called { background-color: yellow; color: yellow; }
     .bingo-card .marked { background-color: lightgreen !important; color: black; }
-    .bingo-logo { display: flex; justify-content: center; margin-bottom: 8px; gap: 4px; }
-    .bingo-ball { width: 28px; height: 28px; border-radius: 50%; background-color: gray; color: white; font-weight: bold; display: flex; align-items: center; justify-content: center; font-size: 12px; }
-    .bingo-ball.B { background-color: orange; }
-    .bingo-ball.I { background-color: green; }
-    .bingo-ball.N { background-color: blue; }
-    .bingo-ball.G { background-color: red; }
-    .bingo-ball.O { background-color: purple; }
-    .mini-table th { height: 20px; width: 20px; text-align: center; font-size: 12px; }
-    .buttons { display: flex; gap: 10px; margin-top: 10px; justify-content: center; }
+    .bingo-card .invalid { background-color: #ffcccc !important; }
+    .number-grid { display: grid; grid-template-columns: repeat(10, 24px); gap: 3px; margin-top: 10px; }
+    .number-grid button { width: 24px; height: 24px; font-size: 10px; cursor: pointer; }
+    .player-info-bar { display: flex; gap: 16px; padding: 10px 0; font-size: 15px; font-weight: bold; }
+    .player-info-bar span { background: white; border-radius: 8px; padding: 6px 18px; box-shadow: 0 2px 5px rgba(0,0,0,0.07); }
+    .called-numbers-bar { margin-bottom: 8px; background: #e6f7ff; border-radius: 6px; padding: 6px 10px; font-size: 13px; color: #222; text-align: right; min-height: 26px; }
+    .countdown-timer { font-size: 18px; font-weight: bold; color: #d9534f; margin-bottom: 10px; }
+    .buttons { display: flex; gap: 10px; margin-top: 10px; }
     .buttons button { padding: 6px 12px; font-size: 12px; cursor: pointer; }
     .hidden { display: none; }
-    .layout-flex { display: flex; gap: 20px; align-items: flex-start; }
-    .ball-container { display: flex; flex-wrap: wrap; gap: 4px; position: absolute; padding-top: 20px; top: 20px; right: 10px; max-width: 180px; transform: scale(0.8); z-index: 1; justify-content: flex-end; }
-    .bingo-card .invalid { background-color: #ffcccc !important; }
-    .info-bar { display: flex; justify-content: center; align-items: center; gap: 10px; padding: 10px; background-color: #e6f7ff; border-radius: 10px; margin-bottom: 1px; font-size: 8px; font-weight: bold; flex-wrap: nowrap; white-space: nowrap; overflow-x: auto; height: 6px; }
-    .info-bar div { padding: 15px 7px; border-radius: 5px; background-color: white; box-shadow: 0 10px 30px rgba(0,0,0,0.1); height: 6px; }
-    .player-info-bar { display: flex; justify-content: flex-start; align-items: center; gap: 16px; padding: 10px 0 0 0; font-size: 15px; font-weight: bold; }
-    .player-info-bar span { background: white; border-radius: 8px; padding: 6px 18px; box-shadow: 0 2px 5px rgba(0,0,0,0.07); }
-    .player-info-bar .username { color: #1a73e8; }
-    .player-info-bar .balance { color: #28a745; }
-    @media (max-width: 600px) {
-      .layout-flex { flex-direction: column; }
-      .ball-container { position: static; transform: scale(1); }
-      .player-info-bar { flex-direction: column; align-items: flex-start; gap: 8px; }
+    @media (max-width: 900px) {
+      .flex-main { flex-direction: column; align-items: stretch; }
+      .right-panel { align-items: stretch; }
+      .bingo-card-container { margin-right: 0; }
     }
   </style>
   <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
@@ -52,42 +39,33 @@
       <span class="username" id="display-username">👤 Username: ...</span>
       <span class="balance" id="display-balance">💰 Balance: ...</span>
     </div>
-    <div class="grid" id="number-grid"></div>
-    <div class="bingo-card" id="bingo-container"></div>
+    <div class="number-grid" id="number-grid"></div>
+    <div id="picked-message" style="color:red; font-weight:bold; margin-top:8px;"></div>
+    <div id="bingo-container"></div>
   </div>
   <div id="page2" class="hidden">
-    <div id="countdown-bar" style="height: 6px; background: green; width: 100%; margin-top: 4px;"></div>
-    <div id="info-bar" class="info-bar">
-      <div id="called-count">Called: 0</div>
-      <div id="balance-display">💰 Balance: 0</div>
-      <div id="player-count">👥 Players: 0</div>
-      <div id="gain-point">🏆 win: 0</div>
-    </div>
-    <div class="ball-container" id="ball-scroll"></div>
-    <div class="try-again-container hidden" id="try-again-container" style="text-align: center; margin-top: 20px;">
-      <button onclick="tryAgain()" style="padding: 8px 14px; font-size: 14px; background: #28a745; color: white; border: none; border-radius: 4px;">🔁 Try Again</button>
-    </div>
-    <div class="layout-flex">
-      <div class="mini-table-container">
-        <table class="mini-table" id="mini-table"></table>
-      </div>
-      <div class="bingo-card-container">
-        <div class="bingo-card" id="game-card"></div>
-        <div id="card-number-display" style="margin-top: 8px; font-size: 12px; font-weight: bold; text-align: center; color: red;"></div>
-        <div class="buttons">
-          <button onclick="checkBingo()">Bingo!</button>
-          <button onclick="endGame()">End Game</button>
+    <div class="countdown-timer" id="countdown-timer"></div>
+    <div class="flex-main">
+      <div class="left-panel"></div>
+      <div class="right-panel">
+        <div class="called-numbers-bar" id="called-numbers-bar"></div>
+        <div class="bingo-card-container">
+          <div class="bingo-card" id="game-card"></div>
+          <div id="card-number-display" style="margin-top: 8px; font-size: 12px; font-weight: bold; text-align: center; color: red;"></div>
+          <div class="buttons">
+            <button onclick="checkBingo()">Bingo!</button>
+            <button onclick="endGame()">End Game</button>
+          </div>
         </div>
+        <div id="game-message" style="margin-top: 10px;"></div>
       </div>
     </div>
-    <div id="game-message"></div>
   </div>
   <script>
     let playerBalance = 0;
     let calledNumbers = new Set();
     let manuallyMarked = new Set();
     let lockedSeeds = [];
-    let allCallPool = [];
     let currentSeed = null;
     let gameCard = null;
     let winnerInfo = null;
@@ -101,8 +79,6 @@
     }
     document.getElementById('display-username').textContent = "👤 Username: " + telegramUsername;
     function updateBalanceDisplay() {
-      const balanceEl = document.getElementById('balance-display');
-      if (balanceEl) balanceEl.textContent = `💰 Balance: ${playerBalance}`;
       document.getElementById('display-balance').textContent = "💰 Balance: " + playerBalance;
     }
     updateBalanceDisplay();
@@ -123,33 +99,16 @@
       }
       return array;
     }
-    function getLetterForNumber(number) {
-      if (number <= 15) return 'B';
-      if (number <= 30) return 'I';
-      if (number <= 45) return 'N';
-      if (number <= 60) return 'G';
-      if (number <= 75) return 'O';
-      return '';
-    }
-    function createBingoHeader(tag = 'td') {
-      const row = document.createElement('tr');
-      ['B', 'I', 'N', 'G', 'O'].forEach(letter => {
-        const cell = document.createElement(tag);
-        cell.innerHTML = `<div class="bingo-ball ${letter}">${letter}</div>`;
-        row.appendChild(cell);
-      });
-      return row;
-    }
     const grid = document.getElementById('number-grid');
     const page1 = document.getElementById('page1');
     const page2 = document.getElementById('page2');
     const bingoContainer = document.getElementById('bingo-container');
     const gameCardContainer = document.getElementById('game-card');
-    const calledCount = document.getElementById('called-count');
-    const miniTable = document.getElementById('mini-table');
-    const ballScroll = document.getElementById('ball-scroll');
+    const calledNumbersBar = document.getElementById('called-numbers-bar');
+    const countdownTimer = document.getElementById('countdown-timer');
     const gameMessage = document.getElementById('game-message');
     const cardNumberDisplay = document.getElementById('card-number-display');
+    const pickedMessage = document.getElementById('picked-message');
     const socket = io();
 
     socket.on('balanceUpdate', (newBalance) => {
@@ -157,41 +116,29 @@
       updateBalanceDisplay();
       showToast(`💰 Your balance was updated to ${newBalance}`);
     });
-    socket.on('connect', () => {});
-    socket.on('countdown', (seconds) => {
-      if (gameMessage) gameMessage.textContent = `⏳ Game starts in ${seconds}s...`;
-      const bar = document.getElementById('countdown-bar');
-      if (bar) {
-        const width = (seconds / 60) * 100;
-        bar.style.width = `${width}%`;
-      }
-    });
     socket.on('init', (data) => {
       calledNumbers = new Set(data.calledNumbers || []);
       playerBalance = data.balance || 0;
       lockedSeeds = data.lockedSeeds || [];
       updateBalanceDisplay();
-      renderMiniTable();
-      renderGameCard();
+      highlightLockedSeeds();
+    });
+    socket.on('lockedSeeds', (seeds) => {
+      lockedSeeds = seeds || [];
       highlightLockedSeeds();
     });
     socket.on('numberCalled', (number) => {
-      if (!calledNumbers.has(number)) {
-        calledNumbers.add(number);
-        updateBall(number);
-        renderMiniTable();
-        renderGameCard();
-        calledCount.textContent = `Called: ${calledNumbers.size}`;
-      }
+      calledNumbers.add(number);
+      updateCalledNumbersBar();
+      renderGameCard();
+    });
+    socket.on('countdown', (seconds) => {
+      countdownTimer.textContent = `Game starts in ${seconds}s...`;
+      if (seconds <= 0) countdownTimer.textContent = '';
     });
     socket.on('gameStarted', (data) => {
-      if (gameMessage) gameMessage.textContent = '🎯 Game has started!';
-      const bar = document.getElementById('countdown-bar');
-      if (bar) bar.style.width = '0%';
-      if (data?.playerCount) {
-        const playerCountEl = document.getElementById('player-count');
-        if (playerCountEl) playerCountEl.textContent = `👥 Players: ${data.playerCount}`;
-      }
+      countdownTimer.textContent = '';
+      gameMessage.textContent = '🎯 Game has started!';
     });
     socket.on('winner', (data) => {
       winnerInfo = data;
@@ -204,18 +151,13 @@
         winnerInfo = null;
       }, 15000);
     });
-    socket.on('stopCalling', () => {
-      console.log('⛔ Number calling stopped due to a winner.');
-    });
+    socket.on('stopCalling', () => {});
     socket.on('blocked', (reason) => {
-      alert('❌ Blocked: ' + reason);
-      location.reload();
+      gameMessage.textContent = reason;
+      setTimeout(() => { gameMessage.textContent = ""; }, 2000);
     });
     socket.on('reset', () => {
       location.reload();
-    });
-    socket.on('playerCount', (count) => {
-      document.getElementById('player-count').textContent = `👥 Players: ${count}`;
     });
 
     function showToast(msg) {
@@ -239,7 +181,27 @@
       btn.addEventListener('click', () => generateCard(i));
       grid.appendChild(btn);
     }
+    function highlightLockedSeeds() {
+      const buttons = document.querySelectorAll('#number-grid button');
+      buttons.forEach(btn => {
+        const num = parseInt(btn.textContent);
+        if (lockedSeeds.includes(num)) {
+          btn.style.backgroundColor = 'red';
+          btn.style.color = 'white';
+          btn.disabled = true;
+        } else {
+          btn.style.backgroundColor = '';
+          btn.style.color = '';
+          btn.disabled = false;
+        }
+      });
+    }
     function generateCard(seed) {
+      if (lockedSeeds.includes(seed)) {
+        pickedMessage.textContent = "❌ Card already picked by another player!";
+        return;
+      }
+      pickedMessage.textContent = "";
       currentSeed = seed;
       const rand = mulberry32(seed);
       const ranges = [[1,15], [16,30], [31,45], [46,60], [61,75]];
@@ -260,7 +222,6 @@
       const container = document.createElement('div');
       container.className = 'bingo-card';
       const table = document.createElement('table');
-      table.appendChild(createBingoHeader());
       for (let row = 0; row < 5; row++) {
         const tr = document.createElement('tr');
         for (let col = 0; col < 5; col++) {
@@ -269,9 +230,6 @@
           td.textContent = val;
           if (val === 'FREE') {
             td.classList.add('free', 'marked');
-          } else {
-            td.addEventListener('click', () => markCell(td, val));
-            if (calledNumbers.has(parseInt(val))) td.classList.add('marked');
           }
           tr.appendChild(td);
         }
@@ -302,66 +260,21 @@
       gameCard = card;
       calledNumbers.clear();
       manuallyMarked.clear();
-      ballScroll.innerHTML = '';
-      calledCount.textContent = 'Called: 0';
-      renderGameCard();
-      renderMiniTable();
       gameMessage.textContent = '';
       cardNumberDisplay.textContent = `Card Number: ${currentSeed}`;
       playerBalance -= 10;
       updateBalanceDisplay();
       socket.emit('register', { username: telegramUsername, seed: currentSeed });
+      renderGameCard();
+      updateCalledNumbersBar();
     }
-    function updateBall(number) {
-      const letter = getLetterForNumber(number);
-      const formattedNumber = `${letter}${number}`;
-      const newBall = document.createElement('div');
-      newBall.textContent = formattedNumber;
-      newBall.className = `ball ${letter} animate`;
-      ballScroll.appendChild(newBall);
-      setTimeout(() => newBall.classList.remove('animate'), 1000);
-      while (ballScroll.children.length > 5) {
-        ballScroll.removeChild(ballScroll.firstElementChild);
-      }
-      const cell = document.getElementById(`mini-${number}`);
-      if (cell) cell.classList.add('called');
-    }
-    function renderMiniTable() {
-      miniTable.innerHTML = '';
-      miniTable.appendChild(createBingoHeader('th'));
-      for (let i = 0; i < 15; i++) {
-        const tr = document.createElement('tr');
-        for (let j = 0; j < 5; j++) {
-          const number = i + j * 15 + 1;
-          const td = document.createElement('td');
-          td.textContent = number;
-          td.id = `mini-${number}`;
-          if (calledNumbers.has(number)) td.classList.add('called');
-          tr.appendChild(td);
-        }
-        miniTable.appendChild(tr);
-      }
-    }
-    function highlightLockedSeeds() {
-      const buttons = document.querySelectorAll('#number-grid button');
-      buttons.forEach(btn => {
-        const num = parseInt(btn.textContent);
-        if (lockedSeeds.includes(num)) {
-          btn.style.backgroundColor = 'red';
-          btn.style.color = 'white';
-          btn.disabled = true;
-        } else {
-          btn.style.backgroundColor = '';
-          btn.style.color = '';
-          btn.disabled = false;
-        }
-      });
+    function updateCalledNumbersBar() {
+      calledNumbersBar.innerHTML = "Called: " + Array.from(calledNumbers).sort((a, b) => a - b).join(', ');
     }
     function renderGameCard() {
       gameCardContainer.innerHTML = '';
       if (!gameCard) return;
       const table = document.createElement('table');
-      table.appendChild(createBingoHeader());
       for (let row = 0; row < 5; row++) {
         const tr = document.createElement('tr');
         for (let col = 0; col < 5; col++) {
@@ -372,7 +285,7 @@
             td.classList.add('free', 'marked');
           } else {
             td.addEventListener('click', () => markCell(td, val));
-            if (manuallyMarked.has(parseInt(val)) || calledNumbers.has(parseInt(val))) {
+            if (manuallyMarked.has(parseInt(val))) {
               td.classList.add('marked');
             }
           }
@@ -385,7 +298,8 @@
     function markCell(td, val) {
       val = parseInt(val);
       if (!calledNumbers.has(val)) {
-        showToast("You can only mark called numbers!");
+        td.classList.add('invalid');
+        setTimeout(() => td.classList.remove('invalid'), 2000);
         return;
       }
       if (manuallyMarked.has(val)) {
@@ -403,7 +317,6 @@
       title.innerHTML = `🎉 <b>${data.username}</b> got Bingo!`;
       const table = document.createElement('table');
       table.className = 'bingo-card';
-      table.appendChild(createBingoHeader());
       for (let row = 0; row < 5; row++) {
         const tr = document.createElement('tr');
         for (let col = 0; col < 5; col++) {
@@ -419,9 +332,6 @@
       container.appendChild(table);
       gameMessage.innerHTML = '';
       gameMessage.appendChild(container);
-    }
-    function tryAgain() {
-      socket.emit('playAgain');
     }
     function checkBingo() {
       socket.emit('checkBingo', Array.from(manuallyMarked));
