@@ -5,117 +5,95 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Multiplayer Bingo</title>
+  <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
   <style>
-    body { font-family: Arial, sans-serif; padding: 10px; background-color: #ccffff; }
-    .flex-main { display: flex; justify-content: flex-end; align-items: center; height: 80vh; }
-    .left-panel { flex: 1; }
-    .right-panel { flex: 1; display: flex; flex-direction: column; align-items: flex-end; }
-    .bingo-card-container { margin-right: 5vw; }
-    .bingo-card table { border-collapse: collapse; }
-    .bingo-card td { background-color: white; color: blue; border: 1px solid #FFC0CB; font-size: 12px; font-weight: bold; text-align: center; width: 28px; height: 28px; cursor: pointer; transition: background 0.3s; }
-    .bingo-card .free { background-color: #ccc; color: yellow; cursor: default; }
-    .bingo-card .marked { background-color: lightgreen !important; color: black; }
-    .bingo-card .invalid { background-color: #ffcccc !important; }
-    .number-grid { display: grid; grid-template-columns: repeat(10, 24px); gap: 3px; margin-top: 10px; }
-    .number-grid button { width: 24px; height: 24px; font-size: 10px; cursor: pointer; }
-    .player-info-bar { display: flex; gap: 16px; padding: 10px 0; font-size: 15px; font-weight: bold; }
-    .player-info-bar span { background: white; border-radius: 8px; padding: 6px 18px; box-shadow: 0 2px 5px rgba(0,0,0,0.07); }
-    .called-numbers-bar { margin-bottom: 8px; background: #e6f7ff; border-radius: 6px; padding: 6px 10px; font-size: 13px; color: #222; text-align: right; min-height: 26px; }
-    .countdown-timer { font-size: 18px; font-weight: bold; color: #d9534f; margin-bottom: 10px; }
-    .buttons { display: flex; gap: 10px; margin-top: 10px; }
-    .buttons button { padding: 6px 12px; font-size: 12px; cursor: pointer; }
-    .hidden { display: none; }
-    @media (max-width: 900px) {
-      .flex-main { flex-direction: column; align-items: stretch; }
-      .right-panel { align-items: stretch; }
-      .bingo-card-container { margin-right: 0; }
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #f0faff;
+    }
+    .info-bar {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .info-bar span {
+      background: white;
+      padding: 8px 16px;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      font-weight: bold;
+    }
+    .number-grid {
+      display: grid;
+      grid-template-columns: repeat(10, 28px);
+      gap: 4px;
+      margin-bottom: 16px;
+    }
+    .number-grid button {
+      width: 28px;
+      height: 28px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .bingo-card table {
+      border-collapse: collapse;
+    }
+    .bingo-card td {
+      width: 32px;
+      height: 32px;
+      border: 1px solid #ccc;
+      text-align: center;
+      font-weight: bold;
+    }
+    .marked { background-color: lightgreen; }
+    .free { background-color: #ccc; color: yellow; }
+    .invalid { background-color: #ffcccc; }
+    .buttons {
+      margin-top: 10px;
     }
   </style>
-  <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
 </head>
 <body>
-  <div id="page1">
-    <div class="player-info-bar">
-      <span class="username" id="display-username">👤 Username: ...</span>
-      <span class="balance" id="display-balance">💰 Balance: ...</span>
-    </div>
-    <div class="number-grid" id="number-grid"></div>
-    <div id="picked-message" style="color:red; font-weight:bold; margin-top:8px;"></div>
-    <div id="bingo-container"></div>
+  <div class="info-bar">
+    <span id="display-username">👤 Username: ...</span>
+    <span id="display-balance">💰 Balance: 0</span>
   </div>
-  <div id="page2" class="hidden">
-    <div class="countdown-timer" id="countdown-timer"></div>
-    <div class="flex-main">
-      <div class="left-panel"></div>
-      <div class="right-panel">
-        <div class="called-numbers-bar" id="called-numbers-bar"></div>
-        <div class="bingo-card-container">
-          <div class="bingo-card" id="game-card"></div>
-          <div id="card-number-display" style="margin-top: 8px; font-size: 12px; font-weight: bold; text-align: center; color: red;"></div>
-          <div class="buttons">
-            <button onclick="checkBingo()">Bingo!</button>
-            <button onclick="endGame()">End Game</button>
-          </div>
-        </div>
-        <div id="game-message" style="margin-top: 10px;"></div>
-      </div>
-    </div>
+
+  <div class="number-grid" id="number-grid"></div>
+  <div id="bingo-container"></div>
+  <div id="game-area" style="margin-top: 20px;"></div>
+  <div class="buttons">
+    <button onclick="checkBingo()">Bingo!</button>
+    <button onclick="endGame()">End Game</button>
   </div>
+
   <script>
-    let playerBalance = 0;
-    let calledNumbers = new Set();
-    let manuallyMarked = new Set();
-    let lockedSeeds = [];
+    const socket = io();
     let currentSeed = null;
     let gameCard = null;
-    let winnerInfo = null;
+    let calledNumbers = new Set();
+    let manuallyMarked = new Set();
+    let playerBalance = 0;
+    let lockedSeeds = [];
+
+    // Handle Telegram username or fallback
     let telegramUsername = "Guest-" + Math.floor(Math.random() * 1000);
-    if (
-      window.Telegram &&
-      Telegram.WebApp &&
-      Telegram.WebApp.initDataUnsafe?.user?.username
-    ) {
+    if (window.Telegram?.WebApp?.initDataUnsafe?.user?.username) {
       telegramUsername = Telegram.WebApp.initDataUnsafe.user.username;
     }
     document.getElementById('display-username').textContent = "👤 Username: " + telegramUsername;
+
     function updateBalanceDisplay() {
       document.getElementById('display-balance').textContent = "💰 Balance: " + playerBalance;
     }
-    updateBalanceDisplay();
-
-    function mulberry32(a) {
-      return function() {
-        var t = a += 0x6D2B79F5;
-        t = Math.imul(t ^ t >>> 15, t | 1);
-        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
-        return ((t ^ t >>> 14) >>> 0) / 4294967296;
-      }
-    }
-    function shuffle(array) {
-      let m = array.length, t, i;
-      while (m) {
-        i = Math.floor(Math.random() * m--);
-        t = array[m]; array[m] = array[i]; array[i] = t;
-      }
-      return array;
-    }
-    const grid = document.getElementById('number-grid');
-    const page1 = document.getElementById('page1');
-    const page2 = document.getElementById('page2');
-    const bingoContainer = document.getElementById('bingo-container');
-    const gameCardContainer = document.getElementById('game-card');
-    const calledNumbersBar = document.getElementById('called-numbers-bar');
-    const countdownTimer = document.getElementById('countdown-timer');
-    const gameMessage = document.getElementById('game-message');
-    const cardNumberDisplay = document.getElementById('card-number-display');
-    const pickedMessage = document.getElementById('picked-message');
-    const socket = io();
 
     socket.on('balanceUpdate', (newBalance) => {
       playerBalance = newBalance;
       updateBalanceDisplay();
-      showToast(`💰 Your balance was updated to ${newBalance}`);
+      alert("💰 Balance updated to " + newBalance);
     });
+
     socket.on('init', (data) => {
       calledNumbers = new Set(data.calledNumbers || []);
       playerBalance = data.balance || 0;
@@ -123,85 +101,47 @@
       updateBalanceDisplay();
       highlightLockedSeeds();
     });
+
     socket.on('lockedSeeds', (seeds) => {
-      lockedSeeds = seeds || [];
+      lockedSeeds = seeds;
       highlightLockedSeeds();
     });
-    socket.on('numberCalled', (number) => {
-      calledNumbers.add(number);
-      updateCalledNumbersBar();
+
+    socket.on('numberCalled', (num) => {
+      calledNumbers.add(num);
       renderGameCard();
     });
-    socket.on('countdown', (seconds) => {
-      countdownTimer.textContent = `Game starts in ${seconds}s...`;
-      if (seconds <= 0) countdownTimer.textContent = '';
-    });
-    socket.on('gameStarted', (data) => {
-      countdownTimer.textContent = '';
-      gameMessage.textContent = '🎯 Game has started!';
-    });
+
     socket.on('winner', (data) => {
-      winnerInfo = data;
-      showWinner(data);
-      setTimeout(() => {
-        page2.classList.add('hidden');
-        page1.classList.remove('hidden');
-        bingoContainer.innerHTML = '';
-        gameMessage.textContent = '';
-        winnerInfo = null;
-      }, 15000);
-    });
-    socket.on('stopCalling', () => {});
-    socket.on('blocked', (reason) => {
-      gameMessage.textContent = reason;
-      setTimeout(() => { gameMessage.textContent = ""; }, 2000);
-    });
-    socket.on('reset', () => {
-      location.reload();
+      alert(`🎉 ${data.username} won!`);
     });
 
-    function showToast(msg) {
-      let toast = document.createElement('div');
-      toast.style.position = 'fixed';
-      toast.style.bottom = '30px';
-      toast.style.left = '50%';
-      toast.style.transform = 'translateX(-50%)';
-      toast.style.background = '#222';
-      toast.style.color = '#fff';
-      toast.style.padding = '12px 24px';
-      toast.style.borderRadius = '8px';
-      toast.style.zIndex = 9999;
-      toast.textContent = msg;
-      document.body.appendChild(toast);
-      setTimeout(() => document.body.removeChild(toast), 2500);
-    }
+    socket.on('blocked', (msg) => {
+      alert("❌ " + msg);
+    });
+
     for (let i = 1; i <= 100; i++) {
       const btn = document.createElement('button');
       btn.textContent = i;
       btn.addEventListener('click', () => generateCard(i));
-      grid.appendChild(btn);
+      document.getElementById('number-grid').appendChild(btn);
     }
+
     function highlightLockedSeeds() {
-      const buttons = document.querySelectorAll('#number-grid button');
-      buttons.forEach(btn => {
-        const num = parseInt(btn.textContent);
-        if (lockedSeeds.includes(num)) {
-          btn.style.backgroundColor = 'red';
-          btn.style.color = 'white';
+      document.querySelectorAll('#number-grid button').forEach(btn => {
+        const val = parseInt(btn.textContent);
+        if (lockedSeeds.includes(val)) {
+          btn.style.background = 'red';
           btn.disabled = true;
         } else {
-          btn.style.backgroundColor = '';
-          btn.style.color = '';
+          btn.style.background = '';
           btn.disabled = false;
         }
       });
     }
+
     function generateCard(seed) {
-      if (lockedSeeds.includes(seed)) {
-        pickedMessage.textContent = "❌ Card already picked by another player!";
-        return;
-      }
-      pickedMessage.textContent = "";
+      if (lockedSeeds.includes(seed)) return alert("❌ Card already taken.");
       currentSeed = seed;
       const rand = mulberry32(seed);
       const ranges = [[1,15], [16,30], [31,45], [46,60], [61,75]];
@@ -218,9 +158,9 @@
       card[2][2] = 'FREE';
       renderCard(card);
     }
+
     function renderCard(card) {
-      const container = document.createElement('div');
-      container.className = 'bingo-card';
+      const container = document.getElementById('bingo-container');
       const table = document.createElement('table');
       for (let row = 0; row < 5; row++) {
         const tr = document.createElement('tr');
@@ -228,51 +168,34 @@
           const td = document.createElement('td');
           const val = card[col][row];
           td.textContent = val;
-          if (val === 'FREE') {
-            td.classList.add('free', 'marked');
-          }
+          if (val === 'FREE') td.classList.add('free', 'marked');
           tr.appendChild(td);
         }
         table.appendChild(tr);
       }
+      container.innerHTML = '';
       container.appendChild(table);
-      const buttons = document.createElement('div');
-      buttons.className = 'buttons';
-      const backButton = document.createElement('button');
-      backButton.textContent = 'Back';
-      backButton.onclick = () => { bingoContainer.innerHTML = ''; };
+
       const playButton = document.createElement('button');
       playButton.textContent = 'Play';
       playButton.onclick = () => startGame(card);
-      buttons.appendChild(backButton);
-      buttons.appendChild(playButton);
-      bingoContainer.innerHTML = '';
-      bingoContainer.appendChild(container);
-      bingoContainer.appendChild(buttons);
+      container.appendChild(playButton);
     }
+
     function startGame(card) {
-      if (playerBalance < 10) {
-        showToast('❌ Not enough balance. Top up to play.');
-        return;
-      }
-      page1.classList.add('hidden');
-      page2.classList.remove('hidden');
+      if (playerBalance < 10) return alert("❌ Not enough balance.");
+      socket.emit('register', {
+        username: telegramUsername,
+        seed: currentSeed
+      });
       gameCard = card;
-      calledNumbers.clear();
       manuallyMarked.clear();
-      gameMessage.textContent = '';
-      cardNumberDisplay.textContent = `Card Number: ${currentSeed}`;
-      playerBalance -= 10;
-      updateBalanceDisplay();
-      socket.emit('register', { username: telegramUsername, seed: currentSeed });
       renderGameCard();
-      updateCalledNumbersBar();
     }
-    function updateCalledNumbersBar() {
-      calledNumbersBar.innerHTML = "Called: " + Array.from(calledNumbers).sort((a, b) => a - b).join(', ');
-    }
+
     function renderGameCard() {
-      gameCardContainer.innerHTML = '';
+      const area = document.getElementById('game-area');
+      area.innerHTML = '';
       if (!gameCard) return;
       const table = document.createElement('table');
       for (let row = 0; row < 5; row++) {
@@ -281,25 +204,23 @@
           const td = document.createElement('td');
           const val = gameCard[col][row];
           td.textContent = val;
-          if (val === 'FREE') {
-            td.classList.add('free', 'marked');
-          } else {
+          if (val === 'FREE') td.classList.add('free', 'marked');
+          else {
             td.addEventListener('click', () => markCell(td, val));
-            if (manuallyMarked.has(parseInt(val))) {
-              td.classList.add('marked');
-            }
+            if (manuallyMarked.has(val)) td.classList.add('marked');
           }
           tr.appendChild(td);
         }
         table.appendChild(tr);
       }
-      gameCardContainer.appendChild(table);
+      area.appendChild(table);
     }
+
     function markCell(td, val) {
       val = parseInt(val);
       if (!calledNumbers.has(val)) {
         td.classList.add('invalid');
-        setTimeout(() => td.classList.remove('invalid'), 2000);
+        setTimeout(() => td.classList.remove('invalid'), 1000);
         return;
       }
       if (manuallyMarked.has(val)) {
@@ -310,41 +231,25 @@
         td.classList.add('marked');
       }
     }
-    function showWinner(data) {
-      const container = document.createElement('div');
-      container.id = 'winner-card-display';
-      const title = document.createElement('div');
-      title.innerHTML = `🎉 <b>${data.username}</b> got Bingo!`;
-      const table = document.createElement('table');
-      table.className = 'bingo-card';
-      for (let row = 0; row < 5; row++) {
-        const tr = document.createElement('tr');
-        for (let col = 0; col < 5; col++) {
-          const td = document.createElement('td');
-          const val = data.card[col][row];
-          td.textContent = val;
-          td.classList.add('marked');
-          tr.appendChild(td);
-        }
-        table.appendChild(tr);
-      }
-      container.appendChild(title);
-      container.appendChild(table);
-      gameMessage.innerHTML = '';
-      gameMessage.appendChild(container);
-    }
+
     function checkBingo() {
       socket.emit('checkBingo', Array.from(manuallyMarked));
     }
+
     function endGame() {
-      page2.classList.add('hidden');
-      page1.classList.remove('hidden');
-      bingoContainer.innerHTML = '';
-      gameMessage.textContent = '';
-      manuallyMarked.clear();
       gameCard = null;
-      winnerInfo = null;
+      manuallyMarked.clear();
+      document.getElementById('game-area').innerHTML = '';
       socket.emit('endGame');
+    }
+
+    function mulberry32(a) {
+      return function() {
+        var t = a += 0x6D2B79F5;
+        t = Math.imul(t ^ t >>> 15, t | 1);
+        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      }
     }
   </script>
 </body>

@@ -14,13 +14,11 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const PORT = 3000;
+const ENTRY_FEE = 10;
 
 // --- LOWDB SETUP ---
 const defaultData = { users: {} };
 const db = await JSONFilePreset(join(__dirname, 'db.json'), defaultData);
-
-// --- ADMIN PANEL SETTINGS ---
-const ADMIN_SECRET = "changeme"; // Must match admin panel
 
 // --- In-memory game state ---
 let players = {};
@@ -37,7 +35,7 @@ let countdown = 60;
 let countdownInterval = null;
 let gameStarted = false;
 
-// Helper functions
+// --- Helper functions ---
 function shuffle(array) {
   let m = array.length, t, i;
   while (m) {
@@ -53,7 +51,7 @@ function mulberry32(a) {
     t = Math.imul(t ^ t >>> 15, t | 1);
     t ^= t + Math.imul(t ^ t >>> 7, t | 61);
     return ((t ^ t >>> 14) >>> 0) / 4294967296;
-  }
+  };
 }
 
 function generateCard(seed) {
@@ -74,81 +72,20 @@ function generateCard(seed) {
 }
 
 function checkBingo(card, markedSet) {
-  // Rows
   for (let r = 0; r < 5; r++) {
-    let row = true;
-    for (let c = 0; c < 5; c++) {
-      if (card[c][r] !== 'FREE' && !markedSet.has(card[c][r])) row = false;
-    }
-    if (row) return true;
+    if (card.every((col, c) => col[r] === 'FREE' || markedSet.has(col[r]))) return true;
   }
-  // Columns
   for (let c = 0; c < 5; c++) {
-    let col = true;
-    for (let r = 0; r < 5; r++) {
-      if (card[c][r] !== 'FREE' && !markedSet.has(card[c][r])) col = false;
-    }
-    if (col) return true;
+    if (card[c].every((val, r) => val === 'FREE' || markedSet.has(val))) return true;
   }
-  // Diagonals
-  let diag1 = true, diag2 = true;
-  for (let i = 0; i < 5; i++) {
-    if (card[i][i] !== 'FREE' && !markedSet.has(card[i][i])) diag1 = false;
-    if (card[i][4 - i] !== 'FREE' && !markedSet.has(card[i][4 - i])) diag2 = false;
-  }
-  return diag1 || diag2;
+  if ([0, 1, 2, 3, 4].every(i => card[i][i] === 'FREE' || markedSet.has(card[i][i]))) return true;
+  if ([0, 1, 2, 3, 4].every(i => card[i][4 - i] === 'FREE' || markedSet.has(card[i][4 - i]))) return true;
+  return false;
 }
 
-// --- Serve static files from /public ---
 app.use(express.static(join(__dirname, 'public')));
 
-// --- ADMIN API MIDDLEWARE ---
-function requireAdmin(req, res, next) {
-  const auth = req.headers.authorization || "";
-  if (auth === "Bearer " + ADMIN_SECRET) {
-    return next();
-  }
-  res.status(403).json({ error: "Forbidden" });
-}
-
-// --- ADMIN API ENDPOINTS ---
-app.get('/admin/list-users', requireAdmin, async (req, res) => {
-  await db.write();
-  res.json({ users: db.data.users });
-});
-
-app.get('/admin/get-balance', requireAdmin, async (req, res) => {
-  await db.write();
-  const username = req.query.username;
-  if (!username || !db.data.users[username]) {
-    return res.status(404).json({ error: "User not found" });
-  }
-  res.json({ balance: db.data.users[username].balance });
-});
-
-app.post('/admin/update-balance', express.json(), requireAdmin, async (req, res) => {
-  const { username, amount } = req.body;
-  if (!username || typeof amount !== "number") {
-    return res.status(400).json({ error: "Invalid username or amount" });
-  }
-  if (!db.data.users[username]) {
-    db.data.users[username] = { balance: amount };
-  } else {
-    db.data.users[username].balance = amount;
-  }
-  await db.write();
-
-  for (const [socketId, info] of Object.entries(players)) {
-    if (info.username === username && balanceMap[socketId] !== undefined) {
-      balanceMap[socketId] = amount;
-      io.to(socketId).emit('balanceUpdate', amount);
-    }
-  }
-  res.json({ success: true });
-});
-
-// --- GAME LOGIC ---
-
+// --- Game Management ---
 function startCountdown() {
   countdown = 60;
   io.emit('countdown', countdown);
@@ -169,10 +106,8 @@ function startCallingNumbers() {
   allCallPool = shuffle(Array.from({ length: 75 }, (_, i) => i + 1));
   callInterval = setInterval(() => {
     if (allCallPool.length === 0 || winner) {
-      if (callInterval) {
-        clearInterval(callInterval);
-        callInterval = null;
-      }
+      clearInterval(callInterval);
+      callInterval = null;
       return;
     }
     const number = allCallPool.shift();
@@ -187,35 +122,64 @@ function resetGame() {
   winner = null;
   allCallPool = [];
   gameStarted = false;
+
   for (let id in players) {
     if (players[id].seed) lockedSeeds.push(players[id].seed);
   }
+
   io.emit('reset');
 }
 
 io.on('connection', (socket) => {
   socket.on('register', async ({ username, seed }) => {
+    console.log("Register called:", username, seed);
+
+    if (!/^[a-zA-Z0-9_]{5,32}$/.test(username)) {
+      socket.emit('blocked', "Only real Telegram usernames are allowed.");
+      return;
+    }
+
     if (lockedSeeds.includes(seed)) {
       socket.emit('blocked', "Card already picked by another player.");
       return;
     }
+
     playerUsernames[socket.id] = username;
     players[socket.id] = { username, seed };
     lockedSeeds.push(seed);
     currentCards[socket.id] = generateCard(seed);
 
+    // ✅ Ensure new users start with 10 balance
     if (!db.data.users[username]) {
-      db.data.users[username] = { balance: 100 };
-      await db.write();
+      db.data.users[username] = { balance: 10 };
+      console.log("🎉 New user initialized:", username);
+    } else if (typeof db.data.users[username].balance !== 'number') {
+      db.data.users[username].balance = 10;
+      console.log("🛠️ Fixed invalid balance for:", username);
     }
+
+    await db.write();
+
+    if (db.data.users[username].balance < ENTRY_FEE) {
+      socket.emit('blocked', "❌ Not enough balance. Top up to play.");
+      delete players[socket.id];
+      delete currentCards[socket.id];
+      delete playerUsernames[socket.id];
+      lockedSeeds = lockedSeeds.filter(s => s !== seed);
+      io.emit('lockedSeeds', lockedSeeds);
+      io.emit('playerCount', Object.keys(players).length);
+      return;
+    }
+
+    // Deduct fee
+    db.data.users[username].balance -= ENTRY_FEE;
+    await db.write();
+
     balanceMap[socket.id] = db.data.users[username].balance;
     socket.emit('balanceUpdate', balanceMap[socket.id]);
     io.emit('playerCount', Object.keys(players).length);
-
-    // Broadcast locked seeds to all players for page 1
     io.emit('lockedSeeds', lockedSeeds);
 
-    // Start countdown if first player and not already started
     if (Object.keys(players).length === 1 && !countdownInterval && !gameStarted) {
       startCountdown();
     }
@@ -230,7 +194,7 @@ io.on('connection', (socket) => {
 
   socket.emit('init', {
     calledNumbers: Array.from(calledNumbers),
-    balance: balanceMap[socket.id] || 100,
+    balance: balanceMap[socket.id] || 0,
     lockedSeeds
   });
 
@@ -238,26 +202,27 @@ io.on('connection', (socket) => {
     if (!currentCards[socket.id] || winner) return;
     const card = currentCards[socket.id];
     const markedSet = new Set(markedArr.map(Number));
-    let valid = true;
-    for (let n of markedSet) {
-      if (!calledNumbers.has(n) && n !== 'FREE') valid = false;
-    }
+    const valid = Array.from(markedSet).every(n => calledNumbers.has(n) || n === 'FREE');
+
     if (!valid) {
       socket.emit('blocked', "Not yet!");
       return;
     }
+
     if (checkBingo(card, markedSet)) {
+      const playerCount = Object.keys(players).length;
+      const winPoint = Math.floor(ENTRY_FEE * playerCount * 0.8);
+
       winner = { username: playerUsernames[socket.id], card };
-      db.data.users[winner.username].balance += 25;
+      db.data.users[winner.username].balance += winPoint;
       await db.write();
+
       balanceMap[socket.id] = db.data.users[winner.username].balance;
       socket.emit('balanceUpdate', balanceMap[socket.id]);
-      io.emit('winner', winner);
+      io.emit('winner', { username: winner.username, card, winPoint });
 
-      if (callInterval) {
-        clearInterval(callInterval);
-        callInterval = null;
-      }
+      clearInterval(callInterval);
+      callInterval = null;
       io.emit('stopCalling');
       setTimeout(resetGame, 15000);
     } else {
@@ -270,11 +235,15 @@ io.on('connection', (socket) => {
   });
 
   socket.on('endGame', () => {
+    const seed = players[socket.id]?.seed;
     delete players[socket.id];
     delete currentCards[socket.id];
     delete playerUsernames[socket.id];
+    if (seed) {
+      lockedSeeds = lockedSeeds.filter(s => s !== seed);
+      io.emit('lockedSeeds', lockedSeeds);
+    }
     io.emit('playerCount', Object.keys(players).length);
-    io.emit('lockedSeeds', lockedSeeds.filter(seed => seed !== players[socket.id]?.seed));
   });
 
   socket.on('disconnect', () => {
@@ -291,5 +260,5 @@ io.on('connection', (socket) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Bingo server running on http://localhost:${PORT}`);
+  console.log(`✅ Bingo server running at http://localhost:${PORT}`);
 });
